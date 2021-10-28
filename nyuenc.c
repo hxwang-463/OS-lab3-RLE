@@ -114,6 +114,7 @@ void *thread_result(void *name){
         free(one_result->content);
         free(one_result);
     }
+    pthread_mutex_unlock(&mutex_result);
     printf("%c", reserve[0]);
     printf("%c", reserve[1]);
     pthread_exit(NULL);
@@ -218,8 +219,10 @@ int main(int argc, char **argv){
     for(i=0;i<num_thread;i++){
         pthread_join(thread_id[i], NULL);
     }
+    pthread_mutex_lock(&mutex_result);
     not_end = 0;
     pthread_cond_signal(&result_not_empty);
+    pthread_mutex_unlock(&mutex_result);
     pthread_join(tid, NULL);
 
 }

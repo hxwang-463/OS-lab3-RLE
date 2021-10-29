@@ -129,6 +129,8 @@ int main(int argc, char **argv){
     num_thread = 1;
 
     // man page of getopt()
+    extern char *optarg;
+    extern int optind, opterr, optopt;
     while((opt = getopt(argc, argv, "j:")) != -1){
         switch(opt){
         case 'j':
@@ -179,7 +181,6 @@ int main(int argc, char **argv){
             handle_error("open");
         if (fstat(fd, &sb) == -1) // To obtain file size 
             handle_error("fstat");    
- 
         for(offset=0;offset<sb.st_size;offset+=4000){
             pa_offset = offset & ~(sysconf(_SC_PAGE_SIZE) - 1);
             length = 4000;
@@ -187,8 +188,6 @@ int main(int argc, char **argv){
             addr = mmap(NULL, length + offset - pa_offset, PROT_READ, MAP_PRIVATE, fd, pa_offset);
             if (addr == MAP_FAILED)
                 handle_error("mmap");
-
-
             Link *one_chunk=(Link*)malloc(sizeof(Link));
             one_chunk->index = index++;
             one_chunk->content = (char*)malloc((length+1)*sizeof(char));
@@ -204,7 +203,7 @@ int main(int argc, char **argv){
         }
         close(fd);
     }
-    
+
     for(i=0;i<num_thread;i++){
         Link *empty_chunk=(Link*)malloc(sizeof(Link));
         empty_chunk->index = -1;
@@ -215,14 +214,12 @@ int main(int argc, char **argv){
         pthread_cond_signal(&work_not_empty);
         pthread_mutex_unlock(&mutex_work);
     }
-
-    for(i=0;i<num_thread;i++){
+    for(i=0;i<num_thread;i++)
         pthread_join(thread_id[i], NULL);
-    }
+
     pthread_mutex_lock(&mutex_result);
     not_end = 0;
     pthread_cond_signal(&result_not_empty);
     pthread_mutex_unlock(&mutex_result);
     pthread_join(tid, NULL);
-
 }

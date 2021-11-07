@@ -12,6 +12,7 @@
 typedef struct link{
     int index;
     char *content;
+    int length;
     struct link *next;
 }Link;
 Link *head_work = NULL;
@@ -24,10 +25,6 @@ pthread_mutex_t mutex_result = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t work_not_empty = PTHREAD_COND_INITIALIZER;
 pthread_cond_t result_not_empty = PTHREAD_COND_INITIALIZER;
 
-int not_in_list(int i){
-    for(Link *temp = head_result;temp!=NULL;temp=temp->next)if(temp->index == i)return 0;
-    return 1;
-}
 
 void *thread_work(void *name){
     do{
@@ -43,23 +40,23 @@ void *thread_work(void *name){
         }
         pthread_mutex_unlock(&mutex_work);
         if(work->index==-1)break;
-        char *result = (char*)malloc((2*strlen(work->content))+1*sizeof(char));
+        char *result = (char*)malloc((2*work->length+1)*sizeof(char));
         char *p = work->content;
         char *q = result;
         int pre = *p;
         *q++ = pre;
         int count = 0;
-        do{
+        int i;
+        for(i=0;i<=work->length;i++){
             if(*p!=pre){
                 *q++ = count;
                 count = 1;
                 pre = *p;
                 *q++ = pre;
             }
-            else{
-                count++;
-            }
-        }while(*p++!=0);
+            else count++;
+            p++;   
+        }
         *q = 0;
         Link *one_result = (Link*)malloc(sizeof(Link));
         one_result->index = work->index;
@@ -70,56 +67,95 @@ void *thread_work(void *name){
         head_result = one_result;
         pthread_cond_signal(&result_not_empty);
         pthread_mutex_unlock(&mutex_result);
-        free(work->content);
-        free(work);
     }while(1);
     pthread_exit(NULL);
 }
 
+
 void *thread_result(void *name){
     char reserve[2];
-    int i;
-    for(i=0;;i++){
+    int i=0;
+    Link *head = NULL;
+    Link *temp;
+    while(1){
         pthread_mutex_lock(&mutex_result);
-        while(not_in_list(i) && not_end)
+        while(head_result == NULL && not_end)
             pthread_cond_wait(&result_not_empty, &mutex_result);
         if(head_result == NULL) break;
         Link *one_result = head_result;
-        if(head_result->index==i){
-            head_result = head_result->next;
-        }
-        else{
-            while(one_result->next->index != i)one_result=one_result->next;
-            Link *temp = one_result;
-            one_result = one_result->next;
-            temp->next = one_result->next;
-        }
+        head_result = head_result->next;
         pthread_mutex_unlock(&mutex_result);
-        if(i==0){
-            reserve[0] = one_result->content[0];
-            reserve[1] = 0;
-        }   
-        if(one_result->content[0]==reserve[0]){
-            one_result->content[1] = one_result->content[1] + reserve[1];
+        if(i==one_result->index){
+            if(i==0){
+                reserve[0] = one_result->content[0];
+                reserve[1] = 0;
+            }   
+            if(one_result->content[0]==reserve[0]){
+                one_result->content[1] = one_result->content[1] + reserve[1];
+            }
+            else{
+                printf("%c", reserve[0]);
+                printf("%c", reserve[1]);
+            }
+            reserve[0] = one_result->content[strlen(one_result->content)-2];
+            reserve[1] = one_result->content[strlen(one_result->content)-1];
+            one_result->content[strlen(one_result->content)-2] = 0;
+            if(one_result->content[0]!=0)
+                printf("%s", one_result->content);
+            free(one_result->content);
+            free(one_result);
+            i++;
+            while(head && head->index==i){
+                if(head->content[0]==reserve[0]){
+                    head->content[1] = head->content[1] + reserve[1];
+                }
+                else{
+                    printf("%c", reserve[0]);
+                    printf("%c", reserve[1]);
+                }
+                reserve[0] = head->content[strlen(head->content)-2];
+                reserve[1] = head->content[strlen(head->content)-1];
+                head->content[strlen(head->content)-2] = 0;
+                if(head->content[0]!=0)
+                    printf("%s", head->content);
+                fflush(stdout);
+                temp=head;
+                head=head->next;
+                free(temp->content);
+                free(temp);
+                i++;
+            }
         }
         else{
-            printf("%c", reserve[0]);
-            printf("%c", reserve[1]);
+            temp=head;
+            if(head==NULL || one_result->index < head->index){
+                one_result->next=head;
+                head=one_result;
+            }
+            else{
+                while(1){
+                    if(temp->next==NULL){
+                        temp->next=one_result;
+                        one_result->next=NULL;
+                        break;
+                    }
+                    if(temp->next->index>one_result->index){
+                        one_result->next=temp->next;
+                        temp->next=one_result;
+                        break;
+                    }
+                    else{
+                        temp=temp->next;
+                    }
+                }
+            }
         }
-        reserve[0] = one_result->content[strlen(one_result->content)-2];
-        reserve[1] = one_result->content[strlen(one_result->content)-1];
-        one_result->content[strlen(one_result->content)-2] = 0;
-        if(one_result->content[0]!=0)
-            printf("%s", one_result->content);
-        free(one_result->content);
-        free(one_result);
     }
     pthread_mutex_unlock(&mutex_result);
     printf("%c", reserve[0]);
     printf("%c", reserve[1]);
     pthread_exit(NULL);
 }
-
 
 
 int main(int argc, char **argv){
@@ -173,37 +209,38 @@ int main(int argc, char **argv){
     int fd;
     struct stat sb;
     off_t offset, pa_offset;
-    size_t length;
+    size_t length_file;
     int index = 0;
+    int length;
+    unsigned long begin;
     for(i=0;i<num_file;i++){
         fd = open(file_name[i], O_RDONLY);
         if (fd == -1)
             handle_error("open");
         if (fstat(fd, &sb) == -1) // To obtain file size 
             handle_error("fstat");    
-        for(offset=0;offset<sb.st_size;offset+=4000){
-            pa_offset = offset & ~(sysconf(_SC_PAGE_SIZE) - 1);
-            length = 4000;
-            if (offset + length > sb.st_size) length = sb.st_size - offset;
-            addr = mmap(NULL, length + offset - pa_offset, PROT_READ, MAP_PRIVATE, fd, pa_offset);
-            if (addr == MAP_FAILED)
+
+        pa_offset = 0 & ~(sysconf(_SC_PAGE_SIZE) - 1);
+        length_file = sb.st_size;
+        addr = mmap(NULL, length_file - pa_offset, PROT_READ, MAP_PRIVATE, fd, pa_offset);
+        if (addr == MAP_FAILED)
                 handle_error("mmap");
+        for(begin=0;begin<length_file;begin+=4000){
+            length = 4000;
+            if (begin + length > length_file) length = length_file - begin;
             Link *one_chunk=(Link*)malloc(sizeof(Link));
             one_chunk->index = index++;
-            one_chunk->content = (char*)malloc((length+1)*sizeof(char));
-            memcpy(one_chunk->content, addr + offset - pa_offset, length);
-            one_chunk->content[length] = 0;
+            one_chunk->content = addr + begin;
+            one_chunk->length = length;
             pthread_mutex_lock(&mutex_work);
             one_chunk->next = NULL;
             tail_work->next = one_chunk;
             tail_work = tail_work->next;
             pthread_cond_signal(&work_not_empty);
             pthread_mutex_unlock(&mutex_work);
-            munmap(addr, length + offset - pa_offset);
         }
         close(fd);
     }
-
     for(i=0;i<num_thread;i++){
         Link *empty_chunk=(Link*)malloc(sizeof(Link));
         empty_chunk->index = -1;
@@ -222,4 +259,5 @@ int main(int argc, char **argv){
     pthread_cond_signal(&result_not_empty);
     pthread_mutex_unlock(&mutex_result);
     pthread_join(tid, NULL);
+
 }

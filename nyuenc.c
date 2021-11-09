@@ -47,7 +47,7 @@ void *thread_work(void *name){
         *q++ = pre;
         int count = 0;
         int i;
-        for(i=0;i<=work->length;i++){
+        for(i=0;i<work->length;i++){
             if(*p!=pre){
                 *q++ = count;
                 count = 1;
@@ -57,6 +57,7 @@ void *thread_work(void *name){
             else count++;
             p++;   
         }
+        *q++ = count;
         *q = 0;
         Link *one_result = (Link*)malloc(sizeof(Link));
         one_result->index = work->index;
